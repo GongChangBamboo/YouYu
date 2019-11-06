@@ -200,16 +200,18 @@ public class BitmapUtil {
      * @param bitmap 要处理的Bitmap
      * @return 处理后的Bitmap
      */
-    public static Bitmap rotaingImageView(int angle, Bitmap bitmap) {
+    public static Bitmap rotaingImageView(float angle, Bitmap bitmap) {
+        Bitmap tempBitmap = Bitmap.createBitmap(bitmap);
         // 旋转图片 动作
         Matrix matrix = new Matrix();
         matrix.postRotate(angle);
+//        matrix.postTranslate()
         // 创建新的图片
-        Bitmap resizedBitmap = Bitmap.createBitmap(bitmap, 0, 0,
-                bitmap.getWidth(), bitmap.getHeight(), matrix, true);
-        if (resizedBitmap != bitmap && bitmap != null && !bitmap.isRecycled()) {
-            bitmap.recycle();
-            bitmap = null;
+        Bitmap resizedBitmap = Bitmap.createBitmap(tempBitmap, 0, 0,
+                tempBitmap.getWidth(), tempBitmap.getHeight(), matrix, true);
+        if (resizedBitmap != tempBitmap && tempBitmap != null && !tempBitmap.isRecycled()) {
+            tempBitmap.recycle();
+            tempBitmap = null;
         }
         return resizedBitmap;
     }

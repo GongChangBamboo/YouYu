@@ -1,12 +1,19 @@
 package com.fish.yuyou.activity;
 
+import android.app.Activity;
+import android.graphics.Bitmap;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.opengl.Matrix;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.Display;
+import android.view.Surface;
+import android.view.WindowManager;
 import android.widget.ImageView;
+import android.widget.TextView;
 
 import com.amap.api.location.AMapLocation;
 import com.amap.api.maps.AMap;
@@ -25,9 +32,14 @@ import com.fish.yuyou.base.BaseActivity;
 import com.fish.yuyou.util.BitmapUtil;
 import com.fish.yuyou.util.LocationUtil;
 
+import java.util.Timer;
+import java.util.TimerTask;
+
 import butterknife.BindView;
 import butterknife.ButterKnife;
 import butterknife.OnClick;
+
+import static java.lang.Math.PI;
 
 public class MainActivity extends BaseActivity implements LocationSource {
     private final static String TAG = "MainActivity";
@@ -36,15 +48,42 @@ public class MainActivity extends BaseActivity implements LocationSource {
     MapView mapview;
     @BindView(R.id.iv_location)
     ImageView ivLocation;
+    @BindView(R.id.tv_angle_fuyang)
+    TextView tvAngleFuyang;
+    @BindView(R.id.tv_angle_henggun)
+    TextView tvAngleHenggun;
+    @BindView(R.id.tv_angle_orientation)
+    TextView tvAngleOrientation;
     private AMap aMap;
     //定位监听器
-    private LocationSource.OnLocationChangedListener mLocationListener = null;
+    private OnLocationChangedListener mLocationListener = null;
     private LocationUtil locationUtil;
     private UiSettings uiSettings;
     private LatLng latLng;
     //传感器管理器
     private SensorManager sensorManager;
-    private Sensor mGyroscope;
+    private long timestamp;
+    private static final float NS2S = 1.0f / 1000000000.0f;
+    private float angle0;
+    private float angle1;
+    private float angle2;
+    //用户当前位置参数
+    private float rotateAngle0;
+    private float rotateAngle1;
+    private float rotateAngle2;
+    private float[] xDir = new float[4];
+    private float[] yDir = new float[4];
+    private float[] zDir = new float[4];
+    private float B;
+    private float theta;
+    private double alpha;
+    private Timer timer;
+    private int axis_x;
+    private int axis_y;
+    private Bitmap locBitmap;//定位标志图标
+    private float rotateAngle = 0;//定位标志当前旋转的角度（方位角，与北极夹角，顺时针为正）
+    MyLocationStyle mls;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -71,11 +110,10 @@ public class MainActivity extends BaseActivity implements LocationSource {
         MAP_TYPE_SATELLITE 卫星图*/
         //加载地图
         aMap.setMapType(AMap.MAP_TYPE_NORMAL);
-        latLng = new LatLng(40, 116);
         uiSettings = aMap.getUiSettings();
         settingZoom();
         //是否显示指南针
-        uiSettings.setCompassEnabled(true);
+        uiSettings.setCompassEnabled(false);
         //开启比例尺
         uiSettings.setScaleControlsEnabled(true);
         //  设置logo位置
@@ -87,20 +125,23 @@ public class MainActivity extends BaseActivity implements LocationSource {
         //这里设置定位为了在点击定位按钮后，显示地图定位的位置方便查看
         //注意这里有个坑，在点击定位后发现定位到了默认的位置（海里面），造成这种情况并不是权限和代码的问题，
         //遇到这种情况时，需要手动将GPS定位打开就OK了
-        MyLocationStyle mls = new MyLocationStyle();
+        mls = new MyLocationStyle();
         mls.myLocationType(MyLocationStyle.LOCATION_TYPE_SHOW);
         //修改定位标志样式
-        mls.myLocationIcon(BitmapDescriptorFactory.fromBitmap(BitmapUtil.readBitmapById(mContext, R.mipmap.location_navi)));
-//        aMap.setMyLocationEnabled(true);
+        locBitmap = BitmapUtil.readBitmapById(mContext, R.mipmap.location_navi);
+        locBitmap = BitmapUtil.rotaingImageView(-45, locBitmap);
+        mls.myLocationIcon(BitmapDescriptorFactory.fromBitmap(locBitmap));
         aMap.setMyLocationStyle(mls);
         setGestures();
         setLocationCallBack();
-        setSensor();
-    }
-
-    private void setSensor() {
         //获得系统传感器服务管理权
         sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+        initSensor();
+        timer = new Timer("MyTimer");
+        timer.schedule(new MyTask(), 0, 1000);
+    }
+
+    private void initSensor() {
         /*
         加速传感器    　　 Sensor.TYPE_ACCELEROMETER
         陀螺仪传感器  　   Sensor.TYPE_GYROSCOPE
@@ -111,8 +152,21 @@ public class MainActivity extends BaseActivity implements LocationSource {
         距离传感器   　　  Sensor.TYPE_PROXIMITY:
         温度传感器   　　  Sensor.TYPE_TEMPERATURE:
         */
-        mGyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
-        sensorManager.registerListener(sensorEventListener, mGyroscope,
+        // 陀螺仪触感器
+        Sensor gyroSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
+
+        // 地磁传感器
+        Sensor magneticSensor = sensorManager
+                .getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+        // 加速度传感器
+        Sensor accelerometerSensor = sensorManager
+                .getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        // 为传感器注册监听
+        sensorManager.registerListener(sensorEventListener, magneticSensor,
+                SensorManager.SENSOR_DELAY_UI);
+        sensorManager.registerListener(sensorEventListener, accelerometerSensor,
+                SensorManager.SENSOR_DELAY_UI);
+        sensorManager.registerListener(sensorEventListener, gyroSensor,
                 SensorManager.SENSOR_DELAY_UI);
     }
 
@@ -126,7 +180,7 @@ public class MainActivity extends BaseActivity implements LocationSource {
         //开启双指倾斜手势
         uiSettings.setTiltGesturesEnabled(false);
         //开启全部手势
-        uiSettings.setAllGesturesEnabled(true);
+//        uiSettings.setAllGesturesEnabled(true);
         //指定手势中心点
 //        aMap.setPointToCenter(100,100);
 
@@ -151,7 +205,7 @@ public class MainActivity extends BaseActivity implements LocationSource {
     }
 
     private void setLocationCallBack() {
-        locationUtil = new LocationUtil();
+        locationUtil = new LocationUtil(2000);
         locationUtil.setLocationCallBack(new LocationUtil.ILocationCallBack() {
             @Override
             public void locationCallBack(String str, double lat, double lgt, AMapLocation aMapLocation) {
@@ -166,21 +220,106 @@ public class MainActivity extends BaseActivity implements LocationSource {
     }
 
     private SensorEventListener sensorEventListener = new SensorEventListener() {
+        float[] accelerometerValues = new float[3];
+        float[] magneticValues = new float[3];
+        float[] ayroValues = new float[3];
+
         @Override
         public void onSensorChanged(SensorEvent event) {
             //传感器值改变
-//            if (event.sensor.getType() == Sensor.TYPE_GYROSCOPE) {
-//                float floats = event.values[1];
+            // 判断当前是加速度传感器还是地磁传感器
+            if (event.sensor.getType() == Sensor.TYPE_MAGNETIC_FIELD) {
+                // 注意赋值时要调用clone()方法
+                magneticValues = event.values.clone();
+                Log.e("TAG", "sensor=地磁传感器");
+            } else if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+                // 注意赋值时要调用clone()方法
+                accelerometerValues = event.values.clone();
+                Log.e("TAG", "sensor=加速度传感器");
+            } else if (event.sensor.getType() == Sensor.TYPE_GYROSCOPE) {
+                ayroValues = event.values.clone();
+                Log.e("TAG", "sensor=陀螺仪传感器");
+//                if (timestamp != 0) {
+//                    final float dT = (event.timestamp - timestamp) * NS2S;
+//                    angle0 += ayroValues[0] * dT;
+//                    angle1 += ayroValues[1] * dT;
+//                    angle2 += ayroValues[2] * dT;
+//                }
+//                timestamp = event.timestamp;
+            }
+            float[] R = new float[9];
+            float[] values = new float[3];
+
+            SensorManager.getRotationMatrix(R, null, accelerometerValues,
+                    magneticValues);
+            SensorManager.getOrientation(R, values);
+
+            rotateAngle0 = (float) Math.toDegrees(values[0]);//azimuth, rotation around the Z axis.
+            rotateAngle1 = (float) Math.toDegrees(values[1]);//pitch, rotation around the X axis.
+            rotateAngle2 = (float) Math.toDegrees(values[2]);//roll, rotation around the Y axis.
+
+//            float[] rollMat = new float[16];
+//            float roll = rotateAngle2;
+//            Matrix.setRotateM(rollMat, 0, roll, 0, 1, 0);
 //
-//            }
-//            //方向传感器
-//            // 调用getRotaionMatrix获得变换矩阵R[]
-//            SensorManager.getRotationMatrix(R2, null, accelerometerValues,
-//                    magneticFieldValues);
-//            SensorManager.getOrientation(R2, values);
-//            // 经过SensorManager.getOrientation(R, values);得到的values值为弧度
-//            // 转换为角度
-//            values[0] = (float) Math.toDegrees(values[0]);
+//            float[] pitchMat = new float[16];
+//            float pitch = -rotateAngle1;
+//            Matrix.setRotateM(pitchMat, 0, pitch, 1, 0, 0);
+//
+//            float[] yawMat = new float[16];
+//            float yaw = -rotateAngle0;
+//            Matrix.setRotateM(yawMat, 0, yaw, 0, 0, 1);
+//
+//            float[] tmpMat = new float[16];
+//            float[] rotateMat = new float[16];
+//            Matrix.multiplyMM(tmpMat, 0, pitchMat, 0, rollMat, 0);
+//            Matrix.multiplyMM(rotateMat, 0, yawMat, 0, tmpMat, 0);
+//
+//            float[] srcVec = new float[4];
+//            float[] destVec = new float[4];
+//
+//            srcVec[0] = 1;
+//            srcVec[1] = 0;
+//            srcVec[2] = 0;
+//            srcVec[3] = 1;
+//            Matrix.multiplyMV(destVec, 0, rotateMat, 0, srcVec, 0);
+//            xDir[0] = destVec[0];
+//            xDir[1] = destVec[1];
+//            xDir[2] = destVec[2];
+//            xDir[3] = destVec[3];
+//
+//            srcVec[0] = 0;
+//            srcVec[1] = 1;
+//            srcVec[2] = 0;
+//            srcVec[3] = 1;
+//            Matrix.multiplyMV(destVec, 0, rotateMat, 0, srcVec, 0);
+//            yDir[0] = destVec[0];
+//            yDir[1] = destVec[1];
+//            yDir[2] = destVec[2];
+//            yDir[3] = destVec[3];
+//
+//            srcVec[0] = 0;
+//            srcVec[1] = 0;
+//            srcVec[2] = 1;
+//            srcVec[3] = 1;
+//            Matrix.multiplyMV(destVec, 0, rotateMat, 0, srcVec, 0);
+//            zDir[0] = destVec[0];
+//            zDir[1] = destVec[1];
+//            zDir[2] = destVec[2];
+//            zDir[3] = destVec[3];
+            theta = Math.abs(values[0]);
+            if (theta > (PI / 2)) {
+                theta = (float) (PI - theta);
+            }
+            B = Math.abs(values[1]);
+
+
+            alpha = Math.toDegrees(Math.atan(Math.tan(B) / (Math.cos(theta))));
+            if (alpha < 0) {
+                alpha = -(90 + alpha);
+            } else {
+                alpha = 90 - alpha;
+            }
         }
 
         @Override
@@ -210,6 +349,7 @@ public class MainActivity extends BaseActivity implements LocationSource {
     protected void onResume() {
         super.onResume();
         mapview.onResume();
+        initSensor();
     }
 
     @Override
@@ -239,4 +379,64 @@ public class MainActivity extends BaseActivity implements LocationSource {
         mLocationListener = null;
     }
 
+    class MyTask extends TimerTask {
+
+        @Override
+        public void run() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+//                    String msg = String.format("\r\nX:(%f, %f, %f)\r\nY:(%f, %f, %f)\r\nZ:(%f, %f, %f)\r\n",
+//                            xDir[0], xDir[1], xDir[2],
+//                            yDir[0], yDir[1], yDir[2],
+//                            zDir[0], zDir[1], zDir[2]);
+//
+//                    float xdirHSAngle = (float) Math.asin(Math.max(-1, Math.min(1, xDir[2])));
+//
+//                    String msg2 = String.format("\r\nxlen:%f, ylen:%f, zlen:%f, xdirHSAngle:%f\r\n",
+//                            Math.sqrt(xDir[0] * xDir[0] + xDir[1] * xDir[1] + xDir[2] * xDir[2]),
+//                            Math.sqrt(yDir[0] * yDir[0] + yDir[1] * yDir[1] + yDir[2] * yDir[2]),
+//                            Math.sqrt(zDir[0] * zDir[0] + zDir[1] * zDir[1] + zDir[2] * zDir[2]),
+//                            xdirHSAngle * 180 / Math.PI);
+                    tvAngleFuyang.setText("俯仰角:" + rotateAngle1);
+//                    fuyang = 90 - Math.toDegrees(B) + "";
+                    tvAngleHenggun.setText("横滚角:" + rotateAngle2);
+//                    henggun = alpha + "";
+                    tvAngleOrientation.setText("方位角:" + rotateAngle0);
+                    if (Math.abs(rotateAngle - rotateAngle0) > 10) {
+                        rotateAngle = rotateAngle0;
+                        mls.myLocationIcon(BitmapDescriptorFactory.fromBitmap(BitmapUtil.rotaingImageView(rotateAngle, locBitmap)));
+                        aMap.setMyLocationStyle(mls);
+                    }
+
+//                    fangwei = rotateAngle0 + "";
+
+//                    tvAngleFuyang.setText("俯仰角:" + Math.toDegrees(angle0));
+//                    tvAngleHenggun.setText("横滚角:" + Math.toDegrees(angle1));
+//                    tvAngleOrientation.setText("方位角:" + (90 - Math.toDegrees(angle2)));
+                }
+            });
+        }
+    }
+
+//    //获取所在象限
+//    public void updateCoordinate() {
+//        WindowManager windowManager = ((Activity) mContext).getWindowManager();
+//        Display display = windowManager.getDefaultDisplay();
+//        int screenRotation = display.getRotation();
+//        switch (screenRotation) {
+//            case Surface.ROTATION_0:
+//                axis_x = SensorManager.AXIS_X;
+//                axis_y = SensorManager.AXIS_Y;
+//                break;
+//            case Surface.ROTATION_90:
+//                axis_x = SensorManager.AXIS_X;
+//                axis_y = SensorManager.AXIS_Y;
+//                break;
+//            case Surface.ROTATION_180:
+//                break;
+//            case Surface.ROTATION_270:
+//                break;
+//        }
+//    }
 }

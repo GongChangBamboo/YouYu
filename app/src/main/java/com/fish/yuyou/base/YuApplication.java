@@ -23,57 +23,57 @@ public class YuApplication extends Application {
         super.onCreate();
         instance = this;
         mActivityList = new ArrayList<Activity>();
-        registerActivityLifecycleCallbacks(activityLifecycleCallbacks);
+//        registerActivityLifecycleCallbacks(activityLifecycleCallbacks);
         //初始化需要的工具类 如 sp packageutil
         initUtil();
     }
 
 
-    @SuppressLint("NewApi")
-    private ActivityLifecycleCallbacks activityLifecycleCallbacks = new ActivityLifecycleCallbacks() {
-
-        @Override
-        public void onActivityCreated(Activity activity, Bundle savedInstanceState) {
-            // TODO Auto-generated method stub
-
-        }
-
-        @Override
-        public void onActivityStarted(Activity activity) {
-            // TODO Auto-generated method stub
-
-        }
-
-        @Override
-        public void onActivityResumed(Activity activity) {
-            // TODO Auto-generated method stub
-
-        }
-
-        @Override
-        public void onActivityPaused(Activity activity) {
-            // TODO Auto-generated method stub
-
-        }
-
-        @Override
-        public void onActivityStopped(Activity activity) {
-            // TODO Auto-generated method stub
-
-        }
-
-        @Override
-        public void onActivitySaveInstanceState(Activity activity, Bundle outState) {
-            // TODO Auto-generated method stub
-
-        }
-
-        @Override
-        public void onActivityDestroyed(Activity activity) {
-
-        }
-
-    };
+//    @SuppressLint("NewApi")
+//    private ActivityLifecycleCallbacks activityLifecycleCallbacks = new ActivityLifecycleCallbacks() {
+//
+//        @Override
+//        public void onActivityCreated(Activity activity, Bundle savedInstanceState) {
+//            // TODO Auto-generated method stub
+//
+//        }
+//
+//        @Override
+//        public void onActivityStarted(Activity activity) {
+//            // TODO Auto-generated method stub
+//
+//        }
+//
+//        @Override
+//        public void onActivityResumed(Activity activity) {
+//            // TODO Auto-generated method stub
+//
+//        }
+//
+//        @Override
+//        public void onActivityPaused(Activity activity) {
+//            // TODO Auto-generated method stub
+//
+//        }
+//
+//        @Override
+//        public void onActivityStopped(Activity activity) {
+//            // TODO Auto-generated method stub
+//
+//        }
+//
+//        @Override
+//        public void onActivitySaveInstanceState(Activity activity, Bundle outState) {
+//            // TODO Auto-generated method stub
+//
+//        }
+//
+//        @Override
+//        public void onActivityDestroyed(Activity activity) {
+//
+//        }
+//
+//    };
 
     public static Context getContext() {
         return instance;

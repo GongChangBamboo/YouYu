@@ -14,15 +14,31 @@ import com.amap.api.maps.model.BitmapDescriptorFactory;
 import com.amap.api.maps.model.LatLng;
 import com.amap.api.maps.model.MarkerOptions;
 import com.fish.yuyou.R;
+import com.fish.yuyou.bean.LocationBean;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * https://www.jianshu.com/p/8237cb984275
  */
 public class LocationUtil implements AMapLocationListener {
+
+    private static List<LocationBean> locationBeans;
+
     private AMapLocationClient aMapLocationClient;
     private AMapLocationClientOption clientOption;
     private ILocationCallBack locationCallBack;
-    private ISensorCallBack  sensorCallBack;
+    private ISensorCallBack sensorCallBack;
+    //定位时间间隔
+    private long timeInterval = 1000;
+
+    public LocationUtil(long timeInterval) {
+        this.timeInterval = timeInterval;
+        locationBeans = new ArrayList<>();
+    }
 
     @Override
     public void onLocationChanged(AMapLocation aMapLocation) {
@@ -38,6 +54,15 @@ public class LocationUtil implements AMapLocationListener {
                 double lgt = aMapLocation.getLongitude();
 
                 locationCallBack.locationCallBack(country + province + city + district + street, lat, lgt, aMapLocation);
+                LocationBean locationBean = new LocationBean();
+                locationBean.setLatitude(lat);
+                locationBean.setLongtitude(lgt);
+                locationBean.setRecodeTime(aMapLocation.getTime());
+                locationBeans.add(locationBean);
+                if (locationBeans.size() > 40) {
+                    //记录了超过20个点时，将其写入本地，同时清空记录
+                    recodeLocal(locationBeans);
+                }
             } else {
                 //显示错误信息ErrCode是错误码，errInfo是错误信息，详见错误码表。
                 Log.e("AmapError", "location Error, ErrCode:"
@@ -63,7 +88,7 @@ public class LocationUtil implements AMapLocationListener {
         //设置是否允许模拟位置,默认为false，不允许模拟位置
         clientOption.setMockEnable(false);
         //设置定位间隔
-        clientOption.setInterval(2000);
+        clientOption.setInterval(timeInterval);
         aMapLocationClient.setLocationOption(clientOption);
 
         aMapLocationClient.startLocation();
@@ -99,5 +124,44 @@ public class LocationUtil implements AMapLocationListener {
         markerOptions.period(100);
 
         return markerOptions;
+    }
+
+    /**
+     * 将用户位置写入本地
+     */
+    private void recodeLocal(List<LocationBean> beans) {
+        StringBuilder stringBuilder = new StringBuilder();
+        for (LocationBean bean : beans) {
+            stringBuilder.append(bean.getRecodeTime())
+                    .append(bean.getLatitude()).append(",")
+                    .append(bean.getLongtitude()).append(",")
+                    .append("\n");
+        }
+        try {
+            File locationFile = new File(FileUtil.getLocationText());
+            if (!locationFile.exists()) {
+                locationFile.createNewFile();
+            }
+            FileUtil.addTxtToFileBuffered(locationFile, stringBuilder.toString());
+        } catch (Exception ee) {
+            ee.printStackTrace();
+        }
+    }
+
+    /**
+     * 读取本地位置文件
+     */
+    public List<LocationBean> loadLocalLocation() {
+        List<LocationBean> beans = new ArrayList<>();
+        List<String> locationList = FileUtil.loadTxtFile(FileUtil.getLocationText());
+        for (String loc : locationList) {
+            String[] locs = loc.split(",");
+            LocationBean locationBean = new LocationBean();
+            locationBean.setLatitude(Double.valueOf(locs[0]));
+            locationBean.setLongtitude(Double.valueOf(locs[1]));
+            locationBean.setRecodeTime(Long.valueOf(locs[2]));
+            beans.add(locationBean);
+        }
+        return beans;
     }
 }

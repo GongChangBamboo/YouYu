@@ -51,6 +51,8 @@ public class SplashActivity extends BaseActivity implements PermissionUtil.Check
                 Permission.ACCESS_FINE_LOCATION,
                 Permission.ACCESS_COARSE_LOCATION,
                 Permission.READ_PHONE_STATE,
+                Permission.READ_EXTERNAL_STORAGE,
+                Permission.WRITE_EXTERNAL_STORAGE,
                 "android.permission.ACCESS_WIFI_STATE",
                 "android.permission.ACCESS_LOCATION_EXTRA_COMMANDS",
                 "android.permission.ACCESS_WIFI_STATE"
